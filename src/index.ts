@@ -11,6 +11,7 @@ const messageUtilities = new MessageUtilities();
 
 client.on('message', async (message: any) => {
     if (!message.author.bot) {
+        const user = await databaseUtilities.handleUser(message.author);
         const commandString = message.content;
         const commandArray = commandString.split(" ");
         const command = commandArray[0];
@@ -31,20 +32,24 @@ client.on('message', async (message: any) => {
                 `);
                 break;
             case "-openbets":
-                const bets = await databaseUtilities.getOpenBets();
+                const betsWithoutOptions = await databaseUtilities.getOpenBets();
+                let bets = await databaseUtilities.fillBetOptions(betsWithoutOptions);
+                bets = await databaseUtilities.fillBetAuthors(bets);
                 let response = messageUtilities.getOpenBetsResponse(bets)
                 await channel.send(response);
 
                 break;
             case "-createbet":
-                const betDescription = message[1];
-                const betOptions = message[2];
+                let betDescription = commandString.split('"');
+                betDescription = betDescription[1];
+                let betOptions = commandString.match(/\[(.*?)\]/);
+                betOptions = betOptions[1].replace(/['"]+/g, '')
+                betOptions = betOptions.split(",")
+                let bet = await databaseUtilities.createBet(betDescription, user);
+                bet = await databaseUtilities.createOptions(betOptions, bet)
+                let createResponse = messageUtilities.getCreateBetResponse(bet, user);
 
-
-                await channel.send(`
-                    Your bet has been created:
-                    WIP
-                `);
+                await channel.send(createResponse);
                 break;
             case "-bet":
                 await channel.send(`
@@ -60,8 +65,7 @@ client.on('message', async (message: any) => {
                 break;
             case "-money":
                 await channel.send(`
-                    Your current standings:
-                    WIP
+                    ${user.getUsername()}'s current standings: ${user.getMoney()}$
                 `);
                 break;
 
