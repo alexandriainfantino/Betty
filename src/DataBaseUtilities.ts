@@ -2,6 +2,7 @@ import mysql from "mysql";
 import Bet from "./models/Bet";
 import Option from "./models/Option";
 import User from "./models/User";
+import UserBet from "./models/UserBet";
 
 export default class DataBaseUtilities {
     public async getOpenBets(): Promise<Bet[]> {
@@ -82,8 +83,8 @@ export default class DataBaseUtilities {
         for (const description of descriptions) {
             let option: Option = await new Promise((resolve, reject) => {
                 const inserts = [description, bet.getId()];
-                statment = mysql.format(statment, inserts);
-                db.query(statment, function (err, result, fields) {
+                let boundStatement = mysql.format(statment, inserts);
+                db.query(boundStatement, function (err, result, fields) {
                     resolve(new Option(result.insertId, description));
                 });
             });
@@ -104,6 +105,94 @@ export default class DataBaseUtilities {
         return user;
     }
 
+    public placeBet(user: User, betId: number, optionId: number, amount: number): Promise<string|boolean> {
+        return new Promise((resolve, reject) => {
+            const db = this.getDbConnection();
+            let statment = "INSERT INTO userBet (userId, betId, optionId, money) VALUES (?,?,?,?)";
+            const inserts = [user.getId(), betId, optionId, amount];
+            statment = mysql.format(statment, inserts);
+            db.query(statment, function (err, result, fields) {
+                if (!err) {
+                    resolve(true);
+
+                    return;
+                }
+                resolve(err.message);
+            });
+        });
+    }
+
+    public getBet(betId: number): Promise<Bet> {
+        return new Promise((resolve, reject) => {
+            const db = this.getDbConnection();
+            let statment = "SELECT * FROM bet WHERE id = ? LIMIT 1";
+            const inserts = [betId];
+            statment = mysql.format(statment, inserts);
+            db.query(statment, function (err, result, fields) {
+                result = result[0]
+                resolve(new Bet(betId, result['description'], [], result['userId']));
+            });
+        });
+    }
+
+    public getOption(optionId: number): Promise<Option> {
+        return new Promise((resolve, reject) => {
+            const db = this.getDbConnection();
+            let statment = "SELECT * FROM `option` WHERE id = ? LIMIT 1";
+            const inserts = [optionId];
+            statment = mysql.format(statment, inserts);
+            db.query(statment, function (err, result, fields) {
+                result = result[0];
+                resolve(new Option(optionId, result['description']));
+            });
+        });
+    }
+
+    public betOptionExists(betId: number, optionId: number): Promise<boolean> {
+        return new Promise((resolve, reject) => {
+            const db = this.getDbConnection();
+            let statment = "SELECT 1 FROM `option` JOIN bet ON bet.id = `option`.betId WHERE betId = ? AND `option`.id = ? AND active = 1";
+            const inserts = [betId, optionId];
+            statment = mysql.format(statment, inserts);
+            db.query(statment, function (err, result, fields) {
+                resolve(result.length > 0);
+            });
+        });
+    }
+
+    public betOptionExistsForUser(betId: number, userId: number): Promise<boolean> {
+        return new Promise((resolve, reject) => {
+            const db = this.getDbConnection();
+            let statment = "SELECT 1 FROM userBet WHERE betId = ? AND userId = ?";
+            const inserts = [betId, userId];
+            statment = mysql.format(statment, inserts);
+            db.query(statment, function (err, result, fields) {
+                resolve(result.length > 0);
+            });
+        });
+    }
+
+    public async getUserBets(betId: number): Promise<UserBet[]> {
+        const db = this.getDbConnection();
+        let statment = "SELECT * FROM userBet WHERE betId = ?";
+
+        let userBets: UserBet[] = await new Promise((resolve, reject) => {
+            const inserts = [betId];
+            let boundStatement = mysql.format(statment, inserts);
+            db.query(boundStatement, function (err, result, fields) {
+                resolve(result);
+            });
+        });
+
+        let userBetObjects: UserBet[] = [];
+        for (const userBet of userBets) {
+            const userBetObject = new UserBet(userBet['id'], userBet['userId'], userBet['betId'], userBet['optionId'], userBet['money'])
+            userBetObjects.push(userBetObject);
+        }
+
+        return userBetObjects;
+    }
+
     private getUser(discordId: number): Promise<User|null> {
         return new Promise((resolve, reject) => {
             const db = this.getDbConnection();
@@ -119,6 +208,119 @@ export default class DataBaseUtilities {
                 }
             });
         });
+    }
+
+    public getUserByUserId(userId: number): Promise<User> {
+        return new Promise((resolve, reject) => {
+            const db = this.getDbConnection();
+            let statement = "SELECT * FROM user WHERE id = ? LIMIT 1";
+            const inserts = [userId];
+            statement = mysql.format(statement, inserts);
+            db.query(statement, function (err, result, fields) {
+                result = result[0];
+                resolve(new User(result['id'], result['discordId'], result['username'], result['money']));
+            });
+        });
+    }
+
+    public closeBet(betId: number): Promise<void> {
+        return new Promise((resolve, reject) => {
+            const db = this.getDbConnection();
+            let statement = "UPDATE bet SET active = 0 WHERE id = ?";
+            const inserts = [betId];
+            statement = mysql.format(statement, inserts);
+            db.query(statement, function (err, result, fields) {
+                resolve(result);
+            });
+        });
+    }
+
+    public async updateUserBets(userBets: UserBet[]): Promise<void> {
+        const db = this.getDbConnection();
+        let statment = "UPDATE userBet SET winnings = ? WHERE id = ?";
+        for (const userBet of userBets) {
+            await new Promise((resolve, reject) => {
+                const inserts = [userBet.getWinnings(), userBet.getId()];
+                let boundStatement = mysql.format(statment, inserts);
+                db.query(boundStatement, function (err, result, fields) {
+                    resolve(result);
+                });
+            });
+        }
+        return;
+    }
+
+    public async addUserWinningsToMoney(userBets: UserBet[]): Promise<void> {
+        const db = this.getDbConnection();
+        let statment = "UPDATE user SET money = money + ? WHERE id = ?";
+        for (const userBet of userBets) {
+            await new Promise((resolve, reject) => {
+                const inserts = [userBet.getWinnings(), userBet.getUserId()];
+                let boundStatement = mysql.format(statment, inserts);
+                db.query(boundStatement, function (err, result, fields) {
+                    resolve(result);
+                });
+            });
+        }
+        return;
+    }
+
+    public updateUserMoney(userId: number, money: number): Promise<void> {
+        return new Promise((resolve, reject) => {
+            const db = this.getDbConnection();
+            let statement = "UPDATE user SET money = money + ? WHERE id = ?";
+            const inserts = [money, userId];
+            statement = mysql.format(statement, inserts);
+            db.query(statement, function (err, result, fields) {
+                resolve(result);
+            });
+        });
+    }
+
+    public async getUsers(): Promise<User[]> {
+        const db = this.getDbConnection();
+        let statment = "SELECT * FROM user ORDER BY money DESC";
+
+        let users: User[] = await new Promise((resolve, reject) => {
+            db.query(statment, function (err, result, fields) {
+                resolve(result);
+            });
+        });
+
+        let userObjects: User[] = [];
+        for (const user of users) {
+            const userObject = new User(user['id'], user['discordId'], user['username'], user['money'])
+            userObjects.push(userObject);
+        }
+
+        return userObjects;
+    }
+
+    public async getUserInfo(users: User[]): Promise<User[]> {
+        const db = this.getDbConnection();
+        let statment = "SELECT * FROM userBet WHERE userId = ?";
+        let userInfoArray: any = [];
+        for (const user of users) {
+            const userBets: UserBet[] = await new Promise((resolve, reject) => {
+                const inserts = [user.getId()];
+                let boundStatement = mysql.format(statment, inserts);
+                db.query(boundStatement, function (err, result, fields) {
+                    resolve(result);
+                });
+            });
+
+            const userBetObjects: UserBet[] = [];
+            for (const userBet of userBets) {
+                const userBetObject = new UserBet(userBet['id'], userBet['userId'], userBet['betId'], userBet['optionId'], userBet['money']);
+                userBetObject.setWinnings(userBet['winnings']);
+                userBetObjects.push(userBetObject);
+            }
+
+            const infoTuple = [user, userBetObjects];
+            userInfoArray.push(infoTuple);
+        }
+
+        return userInfoArray;
     }
 
     private createUser(author: any): Promise<User> {
@@ -143,7 +345,6 @@ export default class DataBaseUtilities {
 
         con.connect(function(err) {
             if (err) throw err;
-            console.log("Connected!");
         });
 
         return con;
