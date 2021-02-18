@@ -175,4 +175,4 @@ client.on('message', async (message: any) => {
     }
 });
 
-client.login(process.env.DISCORD_TOKEN);
+client.login(process.env.BETTY_DISCORD_TOKEN);

@@ -339,7 +339,7 @@ export default class DataBaseUtilities {
         var con = mysql.createConnection({
             host: "localhost",
             user: "root",
-            password: process.env.DATABASE_PASSWORD,
+            password: process.env.BETTY_DATABASE_PASSWORD,
             database: "betty"
         });
 
