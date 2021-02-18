@@ -330,7 +330,7 @@ export default class DataBaseUtilities {
             const inserts = [author.id, author.username];
             statment = mysql.format(statment, inserts);
             db.query(statment, function (err, result, fields) {
-                resolve(new User(result.insertId, author.id, author.username, 100));
+                resolve(new User(result.insertId, author.id, author.username, 1000));
             });
         });
     }
@@ -339,7 +339,7 @@ export default class DataBaseUtilities {
         var con = mysql.createConnection({
             host: "localhost",
             user: "root",
-            password: "",
+            password: process.env.DATABASE_PASSWORD,
             database: "betty"
         });
 
